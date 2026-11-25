@@ -1,0 +1,49 @@
+{
+    "error": {
+        "not_online": "Player is not online.",
+        "no_permission": "You do not have permission for this.",
+        "no_match_character_registration": "Only valid names are allowed without profanity or extra spacing.",
+        "character_create_failed": "Character creation failed. Please try again.",
+        "character_load_failed": "Failed to load selected character. Please try again.",
+        "character_delete_failed": "Character deletion failed. Please try again.",
+        "character_disabled": "This character is disabled by server administration.",
+        "max_slots_reached": "You have reached your maximum allowed character slots.",
+        "relog_cooldown": "Please wait before switching characters again.",
+        "relog_unavailable": "You must be spawned in-game before switching characters.",
+        "database_not_ready": "Database is still initializing. Please wait a moment.",
+        "exploit_dropped": "You Have Been Kicked For Exploitation"
+    },
+    "success": {
+        "character_deleted": "Character deleted!",
+        "character_deleted_id": "Successfully deleted character %s.",
+        "slots_set": "Set character slots for %s to %s.",
+        "slots_removed": "Removed custom character slots override for %s."
+    },
+    "info": {
+        "multichar_title": "Character Selection",
+        "multichar_new_character": "New Character #%s",
+        "char_male": "Male",
+        "char_female": "Female",
+        "play": "Play",
+        "play_description": "Play as %s",
+        "delete_character": "Delete Character",
+        "delete_character_description": "Delete %s",
+        "character_registration_title": "Character Registration",
+        "first_name": "First Name",
+        "last_name": "Last Name",
+        "nationality": "Nationality",
+        "gender": "Sex",
+        "birth_date": "Birth Date",
+        "height": "Height (cm)",
+        "select_gender": "Select your gender...",
+        "confirm_delete": "Are you sure you wish to delete this character? This action cannot be undone.",
+        "logout_command_help": "Logs a player out to character selection (Admin Only)",
+        "relog_command_help": "Switch to another character",
+        "deletechar_command_help": "Delete an online player's active character (Admin Only)",
+        "deletechar_command_arg_player_id": "Player Server ID",
+        "setslots_command_help": "Set custom character slot count for an identifier (Admin Only)",
+        "remslots_command_help": "Remove custom character slot override for an identifier (Admin Only)",
+        "identifier_arg": "Identifier (e.g. license2:..., license:..., or raw ESX license)",
+        "slots_arg": "Maximum number of character slots"
+    }
+}
