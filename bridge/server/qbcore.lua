@@ -9,7 +9,7 @@ end
 
 local function convertPosition(rawPos)
     local pos = DB.SafeDecodeJson(rawPos, nil)
-    local defaultSpawn = Config.Shared.defaultSpawn
+    local defaultSpawn = (Config and Config.Shared and Config.Shared.defaultSpawn) or vec4(-540.58, -212.02, 37.65, 208.88)
     if not pos or not pos.x or not pos.y or not pos.z then
         return vec4(defaultSpawn.x, defaultSpawn.y, defaultSpawn.z, defaultSpawn.w)
     end
@@ -37,14 +37,16 @@ function QBCoreAdapter.GetAllowedSlots(source)
     local dbSlots = DB.GetSlotOverride(ids.list)
     if dbSlots then return dbSlots end
 
-    local overrides = Config.Server.playersNumberOfCharacters or {}
+    local srv = Config and Config.Server or {}
+    local defaultSlots = srv.defaultNumberOfCharacters or 3
+    local overrides = srv.playersNumberOfCharacters or {}
     if ids.license and overrides[ids.license] then
-        return tonumber(overrides[ids.license]) or Config.Server.defaultNumberOfCharacters
+        return tonumber(overrides[ids.license]) or defaultSlots
     end
     if ids.license2 and overrides[ids.license2] then
-        return tonumber(overrides[ids.license2]) or Config.Server.defaultNumberOfCharacters
+        return tonumber(overrides[ids.license2]) or defaultSlots
     end
-    return Config.Server.defaultNumberOfCharacters or 3
+    return defaultSlots
 end
 
 function QBCoreAdapter.GetCharacters(source)
@@ -76,7 +78,7 @@ function QBCoreAdapter.GetCharacters(source)
         chars[#chars + 1] = {
             id = row.citizenid,
             citizenid = row.citizenid,
-            cid = tonumber(charinfo.cid) or tonumber(row.cid) or i,
+            cid = tonumber(row.cid) or tonumber(charinfo.cid) or i,
             charinfo = charinfo,
             money = {
                 bank = tonumber(money.bank) or 0,
@@ -156,11 +158,11 @@ function QBCoreAdapter.LoadCharacter(source, charId)
 end
 
 local function giveStarterItems(source, QBCore)
-    if not Config.Server.giveStarterItems then return end
+    if not (Config and Config.Server and Config.Server.giveStarterItems) then return end
     local Player = QBCore.Functions and QBCore.Functions.GetPlayer and QBCore.Functions.GetPlayer(source)
     if not Player then return end
 
-    local items = Config.Shared.starterItems or {}
+    local items = (Config and Config.Shared and Config.Shared.starterItems) or {}
     local useOxInv = GetResourceState('ox_inventory') == 'started'
 
     if useOxInv then
@@ -215,8 +217,26 @@ function QBCoreAdapter.CreateCharacter(source, charinfo)
         return { success = false, error = 'max_slots_reached' }
     end
 
-    local lastChar = existing[#existing]
-    local nextCid = (lastChar and tonumber(lastChar.cid) or #existing) + 1
+    local usedSlots = {}
+    for i = 1, #existing do
+        usedSlots[tonumber(existing[i].cid) or i] = true
+    end
+
+    local nextCid = nil
+    local requestedCid = tonumber(charinfo.cid)
+    if requestedCid and requestedCid >= 1 and requestedCid <= maxSlots and not usedSlots[requestedCid] then
+        nextCid = math.floor(requestedCid)
+    else
+        for s = 1, maxSlots do
+            if not usedSlots[s] then
+                nextCid = s
+                break
+            end
+        end
+    end
+    if not nextCid then
+        return { success = false, error = 'max_slots_reached' }
+    end
 
     local sanitized = {
         firstname = charinfo.firstname,
@@ -278,15 +298,29 @@ function QBCoreAdapter.DeleteCharacter(source, charId)
         return { success = false, error = 'exploit_ownership' }
     end
 
-    local deleted = DB.SafeDeleteByTables(Config.Server.characterDataTables.qbcore, charId)
+    local qbTables = (Config and Config.Server and Config.Server.characterDataTables and Config.Server.characterDataTables.qbcore) or { { 'players', 'citizenid' } }
+    local deleted = DB.SafeDeleteByTables(qbTables, charId)
     return { success = deleted }
 end
 
 function QBCoreAdapter.ForceDeleteCharacter(charId)
+    if type(charId) ~= 'string' or charId == '' then return false end
+    local okRow, row = pcall(MySQL.single.await, 'SELECT citizenid FROM players WHERE citizenid = ? LIMIT 1', { charId })
+    if not okRow or not row then return false end
+
     local QBCore = getCore()
-    if not QBCore or not QBCore.Player or not QBCore.Player.ForceDeleteCharacter then return false end
-    local ok = pcall(QBCore.Player.ForceDeleteCharacter, charId)
-    return ok
+    if QBCore and QBCore.Functions and QBCore.Functions.GetPlayerByCitizenId then
+        local existing = QBCore.Functions.GetPlayerByCitizenId(charId)
+        if existing and existing.PlayerData and existing.PlayerData.source then
+            local src = existing.PlayerData.source
+            if QBCore.Players then QBCore.Players[src] = nil end
+            if QBCore.PlayersByCitizenId then QBCore.PlayersByCitizenId[charId] = nil end
+            DropPlayer(tostring(src), 'An admin deleted the character which you are currently using')
+        end
+    end
+
+    local qbTables = (Config and Config.Server and Config.Server.characterDataTables and Config.Server.characterDataTables.qbcore) or { { 'players', 'citizenid' } }
+    return DB.SafeDeleteByTables(qbTables, charId)
 end
 
 function QBCoreAdapter.Logout(source)
@@ -294,6 +328,7 @@ function QBCoreAdapter.Logout(source)
     if not QBCore or not QBCore.Player or not QBCore.Player.Logout then return false end
     local ok = pcall(QBCore.Player.Logout, source)
     if ok then
+        Wait(250)
         TriggerClientEvent('rc_multicharacter:client:openMenu', source)
     end
     return ok

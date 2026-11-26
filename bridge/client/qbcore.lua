@@ -17,6 +17,9 @@ function QBCoreClient.ApplyPreviewSkin(previewData, ped, helpers)
 
     SetPlayerModel(cache.playerId, previewData.model)
     local currentPed = PlayerPedId()
+    if DoesEntityExist(currentPed) then
+        SetPedDefaultComponentVariation(currentPed)
+    end
     local decoded = type(previewData.skin) == 'string' and json.decode(previewData.skin) or previewData.skin
 
     if decoded then

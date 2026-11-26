@@ -5,7 +5,7 @@ local QBox = {}
 
 local function convertPosition(rawPos)
     local pos = DB.SafeDecodeJson(rawPos, nil)
-    local defaultSpawn = Config.Shared.defaultSpawn
+    local defaultSpawn = (Config and Config.Shared and Config.Shared.defaultSpawn) or vec4(-540.58, -212.02, 37.65, 208.88)
     if not pos or not pos.x or not pos.y or not pos.z then
         return vec4(defaultSpawn.x, defaultSpawn.y, defaultSpawn.z, defaultSpawn.w)
     end
@@ -28,14 +28,16 @@ function QBox.GetAllowedSlots(source)
     local dbSlots = DB.GetSlotOverride(ids.list)
     if dbSlots then return dbSlots end
 
-    local overrides = Config.Server.playersNumberOfCharacters or {}
+    local srv = Config and Config.Server or {}
+    local defaultSlots = srv.defaultNumberOfCharacters or 3
+    local overrides = srv.playersNumberOfCharacters or {}
     if ids.license2 and overrides[ids.license2] then
-        return tonumber(overrides[ids.license2]) or Config.Server.defaultNumberOfCharacters
+        return tonumber(overrides[ids.license2]) or defaultSlots
     end
     if ids.license and overrides[ids.license] then
-        return tonumber(overrides[ids.license]) or Config.Server.defaultNumberOfCharacters
+        return tonumber(overrides[ids.license]) or defaultSlots
     end
-    return Config.Server.defaultNumberOfCharacters or 3
+    return defaultSlots
 end
 
 function QBox.GetCharacters(source)
@@ -73,7 +75,7 @@ function QBox.GetCharacters(source)
         chars[#chars + 1] = {
             id = row.citizenid,
             citizenid = row.citizenid,
-            cid = tonumber(charinfo.cid) or tonumber(row.cid) or i,
+            cid = tonumber(row.cid) or tonumber(charinfo.cid) or i,
             charinfo = charinfo,
             money = {
                 bank = tonumber(money.bank) or 0,
@@ -145,7 +147,7 @@ function QBox.LoadCharacter(source, charId)
 end
 
 local function giveStarterItems(source)
-    if not Config.Server.giveStarterItems then return end
+    if not (Config and Config.Server and Config.Server.giveStarterItems) then return end
     if GetResourceState('ox_inventory') ~= 'started' then return end
 
     local deadline = GetGameTimer() + 5000
@@ -157,7 +159,7 @@ local function giveStarterItems(source)
         Wait(100)
     end
 
-    local items = Config.Shared.starterItems or {}
+    local items = (Config and Config.Shared and Config.Shared.starterItems) or {}
     for i = 1, #items do
         local item = items[i]
         local meta = nil
@@ -179,8 +181,26 @@ function QBox.CreateCharacter(source, charinfo)
         return { success = false, error = 'max_slots_reached' }
     end
 
-    local lastChar = existing[#existing]
-    local nextCid = (lastChar and tonumber(lastChar.cid) or #existing) + 1
+    local usedSlots = {}
+    for i = 1, #existing do
+        usedSlots[tonumber(existing[i].cid) or i] = true
+    end
+
+    local nextCid = nil
+    local requestedCid = tonumber(charinfo.cid)
+    if requestedCid and requestedCid >= 1 and requestedCid <= maxSlots and not usedSlots[requestedCid] then
+        nextCid = math.floor(requestedCid)
+    else
+        for s = 1, maxSlots do
+            if not usedSlots[s] then
+                nextCid = s
+                break
+            end
+        end
+    end
+    if not nextCid then
+        return { success = false, error = 'max_slots_reached' }
+    end
 
     local sanitized = {
         firstname = charinfo.firstname,
@@ -232,7 +252,8 @@ function QBox.DeleteCharacter(source, charId)
         return { success = false, error = 'exploit_ownership' }
     end
 
-    local deleted = DB.SafeDeleteByTables(Config.Server.characterDataTables.qbox, charId)
+    local qboxTables = (Config and Config.Server and Config.Server.characterDataTables and Config.Server.characterDataTables.qbox) or { { 'players', 'citizenid' } }
+    local deleted = DB.SafeDeleteByTables(qboxTables, charId)
     if deleted then
         TriggerEvent('qbx_core:server:characterDeleted', charId)
     end
@@ -242,10 +263,24 @@ end
 
 function QBox.ForceDeleteCharacter(charId)
     if type(charId) ~= 'string' or charId == '' then return false end
-    local ok = pcall(function()
-        exports.qbx_core:DeleteCharacter(charId)
+    local okRow, row = pcall(MySQL.single.await, 'SELECT citizenid FROM players WHERE citizenid = ? LIMIT 1', { charId })
+    if not okRow or not row then
+        return false
+    end
+
+    local okP, player = pcall(function()
+        return exports.qbx_core:GetPlayerByCitizenId(charId)
     end)
-    return ok
+    if okP and player and player.PlayerData and player.PlayerData.source then
+        DropPlayer(tostring(player.PlayerData.source), 'An admin deleted the character which you are currently using')
+    end
+
+    local qboxTables = (Config and Config.Server and Config.Server.characterDataTables and Config.Server.characterDataTables.qbox) or { { 'players', 'citizenid' } }
+    local deleted = DB.SafeDeleteByTables(qboxTables, charId)
+    if deleted then
+        TriggerEvent('qbx_core:server:characterDeleted', charId)
+    end
+    return deleted
 end
 
 function QBox.Logout(source)

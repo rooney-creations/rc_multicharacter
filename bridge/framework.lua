@@ -125,7 +125,7 @@ function Bridge.Framework.Notify(sourceOrMsg, msgOrType, typeOrDuration, duratio
             description = tostring(msg or ''),
             type = notifyType,
             duration = duration,
-            position = Config.Shared.notifyPosition or 'top-right',
+            position = (Config and Config.Shared and Config.Shared.notifyPosition) or 'top-right',
         })
     else
         local msg = sourceOrMsg
@@ -135,7 +135,7 @@ function Bridge.Framework.Notify(sourceOrMsg, msgOrType, typeOrDuration, duratio
             description = tostring(msg or ''),
             type = notifyType,
             duration = duration,
-            position = Config.Shared.notifyPosition or 'top-right',
+            position = (Config and Config.Shared and Config.Shared.notifyPosition) or 'top-right',
         })
     end
 end

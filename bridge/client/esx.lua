@@ -26,6 +26,9 @@ function ESXClient.ApplyPreviewSkin(previewData, _, helpers)
 
     SetPlayerModel(cache.playerId, previewData.model)
     local currentPed = PlayerPedId()
+    if DoesEntityExist(currentPed) then
+        SetPedDefaultComponentVariation(currentPed)
+    end
 
     if previewData.mode == 'appearance' then
         if GetResourceState('illenium-appearance') == 'started' then
@@ -173,6 +176,9 @@ RegisterNetEvent('esx:playerLoaded', function(xPlayer, isNew, skin)
 
         if not isNew and skin then
             applyEsxExistingSkin(skin, xPlayer)
+        elseif isNew then
+            local isFemale = (xPlayer and (xPlayer.sex == 'f' or xPlayer.sex == 'F' or (xPlayer.variables and (xPlayer.variables.sex == 'f' or xPlayer.variables.sex == 'F')))) and true or false
+            applyGenderDefaultModel(isFemale and 1 or 0)
         end
 
         spawnEsxPedAt(spawnCoords, function()

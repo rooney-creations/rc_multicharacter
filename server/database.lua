@@ -125,7 +125,7 @@ function DB.EnsureFrameworkSchema(fw)
 
     ensureSlotsTable()
 
-    if Config.Server.autoMigrateSchema == false then
+    if Config and Config.Server and Config.Server.autoMigrateSchema == false then
         return true
     end
 
@@ -174,6 +174,7 @@ function DB.EnsureFrameworkSchema(fw)
         if not DB.TableExists('users', true) then
             lib.print.warn('[rc_multicharacter] Table `users` not found. Please import sql/esx.sql!')
         else
+            ensureColumn('users', 'ssn', 'VARCHAR(11) NULL DEFAULT NULL')
             ensureColumn('users', 'firstname', 'VARCHAR(50) NULL DEFAULT NULL')
             ensureColumn('users', 'lastname', 'VARCHAR(50) NULL DEFAULT NULL')
             ensureColumn('users', 'dateofbirth', 'VARCHAR(20) NULL DEFAULT NULL')
@@ -233,8 +234,8 @@ function DB.NormalizeCids(license2, license)
 
     local updates = {}
     for i = 1, #rows do
-        if tonumber(rows[i].cid) ~= i then
-            local charinfo = DB.SafeDecodeJson(rows[i].charinfo, {})
+        local charinfo = DB.SafeDecodeJson(rows[i].charinfo, {})
+        if tonumber(rows[i].cid) ~= i or tonumber(charinfo.cid) ~= i then
             charinfo.cid = i
             updates[#updates + 1] = {
                 query = 'UPDATE players SET cid = ?, charinfo = ? WHERE citizenid = ?',
@@ -327,16 +328,36 @@ function DB.DiscoverEsxCharacterTables()
     local tables = {}
     local seen = {}
 
-    if type(Config.Server.characterDataTables.esx) == 'table' then
-        for i = 1, #Config.Server.characterDataTables.esx do
-            local pair = Config.Server.characterDataTables.esx[i]
+    local function addTablePair(tbl, col)
+        if not isSafeSqlIdentifier(tbl) or not isSafeSqlIdentifier(col) then return end
+        if tbl == 'users' or tbl == 'rc_multicharacter_slots' or tbl == 'multicharacter_slots' then return end
+        local key = tbl .. '.' .. col
+        if seen[key] then return end
+        seen[key] = true
+        tables[#tables + 1] = { tbl, col }
+    end
+
+    -- Child foreign-key tables referencing `users` first so FK constraints never block parent row deletion
+    local okFk, fkCols = pcall(MySQL.query.await, [[
+        SELECT TABLE_NAME AS tableName, COLUMN_NAME AS columnName
+        FROM information_schema.KEY_COLUMN_USAGE
+        WHERE REFERENCED_TABLE_SCHEMA = DATABASE()
+          AND REFERENCED_TABLE_NAME = 'users'
+        ORDER BY TABLE_NAME ASC, COLUMN_NAME ASC
+    ]])
+    if okFk and type(fkCols) == 'table' then
+        for i = 1, #fkCols do
+            addTablePair(fkCols[i].tableName, fkCols[i].columnName)
+        end
+    end
+
+    local esxTables = Config and Config.Server and Config.Server.characterDataTables and Config.Server.characterDataTables.esx
+    if type(esxTables) == 'table' then
+        for i = 1, #esxTables do
+            local pair = esxTables[i]
             local tbl, col = pair[1], pair[2]
             if isSafeSqlIdentifier(tbl) and isSafeSqlIdentifier(col) and DB.ColumnExists(tbl, col, true) then
-                local key = tbl .. '.' .. col
-                if not seen[key] and tbl ~= 'users' then
-                    seen[key] = true
-                    tables[#tables + 1] = { tbl, col }
-                end
+                addTablePair(tbl, col)
             end
         end
     end
@@ -348,7 +369,7 @@ function DB.DiscoverEsxCharacterTables()
             ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME
         WHERE c.TABLE_SCHEMA = DATABASE()
           AND t.TABLE_TYPE = 'BASE TABLE'
-          AND c.DATA_TYPE = 'varchar'
+          AND c.DATA_TYPE IN ('varchar', 'char')
           AND c.COLUMN_NAME IN ('identifier', 'owner')
           AND c.TABLE_NAME NOT IN ('users', 'rc_multicharacter_slots', 'multicharacter_slots')
         ORDER BY c.TABLE_NAME ASC, c.COLUMN_NAME ASC
@@ -356,15 +377,7 @@ function DB.DiscoverEsxCharacterTables()
 
     if ok and type(cols) == 'table' then
         for i = 1, #cols do
-            local tbl = cols[i].tableName
-            local col = cols[i].columnName
-            if isSafeSqlIdentifier(tbl) and isSafeSqlIdentifier(col) then
-                local key = tbl .. '.' .. col
-                if not seen[key] then
-                    seen[key] = true
-                    tables[#tables + 1] = { tbl, col }
-                end
-            end
+            addTablePair(cols[i].tableName, cols[i].columnName)
         end
     end
 

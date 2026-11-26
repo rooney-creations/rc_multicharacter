@@ -1,7 +1,23 @@
 local previewCam = nil
 local menuOpen = false
 local isBusy = false
-local randomLocation = Config.Client.locations[math.random(1, #Config.Client.locations)]
+local previewToken = 0
+local menuSessionToken = 0
+
+local DEFAULT_PREVIEW_LOCATION = {
+    pedCoords = vec4(969.25, 72.61, 116.18, 276.55),
+    camCoords = vec4(972.2, 72.9, 116.68, 97.27),
+}
+
+local function getRandomLocation()
+    local locs = Config and Config.Client and Config.Client.locations
+    if type(locs) == 'table' and #locs > 0 then
+        return locs[math.random(1, #locs)]
+    end
+    return DEFAULT_PREVIEW_LOCATION
+end
+
+local randomLocation = getRandomLocation()
 
 local randomPeds = {
     {
@@ -208,11 +224,15 @@ end
 
 local function randomPed()
     local pedPreset = randomPeds[math.random(1, #randomPeds)]
-    local okModel = pcall(lib.requestModel, pedPreset.model, Config.Client.loadingModelsTimeout or 30000)
+    local timeoutMs = (Config and Config.Client and Config.Client.loadingModelsTimeout) or 30000
+    local okModel = pcall(lib.requestModel, pedPreset.model, timeoutMs)
     if not okModel then return end
 
     SetPlayerModel(cache.playerId, pedPreset.model)
     local pedHandle = PlayerPedId()
+    if DoesEntityExist(pedHandle) then
+        SetPedDefaultComponentVariation(pedHandle)
+    end
 
     if GetResourceState('illenium-appearance') == 'started' then
         pcall(function() exports['illenium-appearance']:setPedAppearance(pedHandle, pedPreset) end)
@@ -232,12 +252,19 @@ local helpers = {
 }
 
 local function previewPed(charId)
+    previewToken = previewToken + 1
+    local myToken = previewToken
+
     if not charId then
         randomPed()
         return
     end
 
     local previewData = lib.callback.await('rc_multicharacter:server:getPreviewPedData', false, charId)
+    if not menuOpen or myToken ~= previewToken then
+        return
+    end
+
     local adapter = Bridge.Framework.GetAdapter()
     if previewData and adapter and adapter.ApplyPreviewSkin then
         adapter.ApplyPreviewSkin(previewData, PlayerPedId(), helpers)
@@ -399,6 +426,7 @@ local function checkStrings(dialog, input)
 end
 
 local function capString(str)
+    if type(str) ~= 'string' then return '' end
     return str:gsub('^%s+', ''):gsub('%s+$', ''):gsub("(%w)([%w']*)", function(first, rest)
         return first:upper() .. rest:lower()
     end)
@@ -425,19 +453,21 @@ local function createCharacter(cid)
     end
 
     isBusy = true
+    previewToken = previewToken + 1
     DoScreenFadeOut(150)
 
     if fw == 'esx' and adapter and adapter.SetAwaitingLoad then
         adapter.SetAwaitingLoad(true, helpers)
     end
 
+    local defHeight = (Config and Config.Shared and Config.Shared.defaultHeight) or (Config and Config.Client and Config.Client.defaultHeight) or 175
     local result = lib.callback.await('rc_multicharacter:server:createCharacter', false, {
         firstname = capString(dialog[1]),
         lastname = capString(dialog[2]),
         nationality = capString(dialog[3]),
         gender = dialog[4] == locale('info.char_male') and 0 or 1,
         birthdate = dialog[5],
-        height = dialog[6] or Config.Client.defaultHeight or 175,
+        height = dialog[6] or defHeight,
         cid = cid,
     })
 
@@ -467,6 +497,8 @@ chooseCharacter = function()
     if menuOpen then return end
     menuOpen = true
     isBusy = false
+    menuSessionToken = menuSessionToken + 1
+    local myMenuToken = menuSessionToken
 
     local fw = Bridge.Framework.WaitForDetection(15000)
     if not fw then
@@ -482,24 +514,40 @@ chooseCharacter = function()
 
     characters = type(characters) == 'table' and characters or {}
     amount = tonumber(amount) or 3
+    if #characters > amount then
+        amount = #characters
+    end
 
-    -- Map dense array by cid slot to avoid msgpack sparse-array truncation bugs
+    -- Map dense array by cid slot to avoid msgpack sparse-array truncation and out-of-range hiding
     local slotted = {}
+    local overflow = {}
     local firstCharId = nil
     for i = 1, #characters do
         local ch = characters[i]
         if ch then
-            local slot = tonumber(ch.cid) or i
-            slotted[slot] = ch
+            local slot = tonumber(ch.cid)
+            if slot and slot >= 1 and slot <= amount and not slotted[slot] then
+                slotted[slot] = ch
+            else
+                overflow[#overflow + 1] = ch
+            end
             if not firstCharId then
                 firstCharId = ch.id
+            end
+        end
+    end
+    for i = 1, #overflow do
+        for s = 1, amount do
+            if not slotted[s] then
+                slotted[s] = overflow[i]
+                break
             end
         end
     end
 
     previewPed(firstCharId)
 
-    randomLocation = Config.Client.locations[math.random(1, #Config.Client.locations)]
+    randomLocation = getRandomLocation()
     SetFollowPedCamViewMode(2)
     DisplayRadar(false)
 
@@ -510,10 +558,15 @@ chooseCharacter = function()
     end
 
     local ped = PlayerPedId()
-    FreezeEntityPosition(ped, true)
+    RequestCollisionAtCoord(randomLocation.pedCoords.x, randomLocation.pedCoords.y, randomLocation.pedCoords.z)
+    if DoesEntityExist(ped) then
+        FreezeEntityPosition(ped, true)
+    end
     Wait(500)
-    SetEntityCoords(ped, randomLocation.pedCoords.x, randomLocation.pedCoords.y, randomLocation.pedCoords.z, false, false, false, false)
-    SetEntityHeading(ped, randomLocation.pedCoords.w)
+    if DoesEntityExist(ped) then
+        SetEntityCoords(ped, randomLocation.pedCoords.x, randomLocation.pedCoords.y, randomLocation.pedCoords.z, false, false, false, false)
+        SetEntityHeading(ped, randomLocation.pedCoords.w)
+    end
 
     NetworkStartSoloTutorialSession()
     local tutTimeout = GetGameTimer() + 5000
@@ -523,11 +576,19 @@ chooseCharacter = function()
 
     -- Invincibility watchdog while in character selection
     CreateThread(function()
-        while menuOpen or NetworkIsInTutorialSession() do
-            SetEntityInvincible(PlayerPedId(), true)
+        while myMenuToken == menuSessionToken and (menuOpen or NetworkIsInTutorialSession()) do
+            local curPed = PlayerPedId()
+            if DoesEntityExist(curPed) then
+                SetEntityInvincible(curPed, true)
+            end
             Wait(250)
         end
-        SetEntityInvincible(PlayerPedId(), false)
+        if myMenuToken == menuSessionToken then
+            local curPed = PlayerPedId()
+            if DoesEntityExist(curPed) then
+                SetEntityInvincible(curPed, false)
+            end
+        end
     end)
 
     Wait(1000)
@@ -592,6 +653,7 @@ chooseCharacter = function()
                     onSelect = function()
                         if isBusy then return end
                         isBusy = true
+                        previewToken = previewToken + 1
                         DoScreenFadeOut(150)
 
                         local adapter = Bridge.Framework.GetAdapter()
@@ -639,6 +701,7 @@ chooseCharacter = function()
                         })
                         if alert == 'confirm' then
                             isBusy = true
+                            previewToken = previewToken + 1
                             local delRes = lib.callback.await('rc_multicharacter:server:deleteCharacter', false, character.id)
                             local ok = delRes and delRes.success == true
                             Bridge.Framework.Notify(ok and locale('success.character_deleted') or locale('error.character_delete_failed'), ok and 'success' or 'error')
@@ -746,4 +809,7 @@ AddEventHandler('onResourceStop', function(resName)
     end
     DisplayRadar(true)
     SetTimecycleModifier('default')
+    if IsScreenFadedOut() then
+        DoScreenFadeIn(0)
+    end
 end)

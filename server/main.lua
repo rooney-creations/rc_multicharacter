@@ -7,7 +7,7 @@ local function trimString(str)
 end
 
 local function hasProfanity(str)
-    local words = Config.Server.profanityWords or {}
+    local words = (Config and Config.Server and Config.Server.profanityWords) or {}
     local lower = str:lower()
     if words[lower] then return true end
 
@@ -84,7 +84,7 @@ local function sanitizeNewCharInfo(data)
 end
 
 local function sendWebhook(eventTitle, message, color)
-    local webhook = Config.Server.logging and Config.Server.logging.webhook
+    local webhook = Config and Config.Server and Config.Server.logging and Config.Server.logging.webhook
     if type(webhook) ~= 'string' or webhook == '' then return end
 
     local colorMap = {
@@ -113,17 +113,18 @@ local function getActiveAdapter()
 end
 
 lib.callback.register('rc_multicharacter:server:getCharacters', function(source)
+    local defaultSlots = (Config and Config.Server and Config.Server.defaultNumberOfCharacters) or 3
     if not DB.AwaitReady(15000) then
-        return {}, Config.Server.defaultNumberOfCharacters or 3, false
+        return {}, defaultSlots, false
     end
 
     local adapter = getActiveAdapter()
     if not adapter then
-        return {}, Config.Server.defaultNumberOfCharacters or 3, false
+        return {}, defaultSlots, false
     end
 
     local chars, maxSlots = adapter.GetCharacters(source)
-    return chars or {}, maxSlots or (Config.Server.defaultNumberOfCharacters or 3), true
+    return chars or {}, maxSlots or defaultSlots, true
 end)
 
 lib.callback.register('rc_multicharacter:server:getPreviewPedData', function(source, charId)
@@ -212,7 +213,7 @@ lib.callback.register('rc_multicharacter:server:createCharacter', function(sourc
 end)
 
 lib.callback.register('rc_multicharacter:server:deleteCharacter', function(source, charId)
-    if not Config.Shared.enableDeleteButton then
+    if not (Config and Config.Shared and Config.Shared.enableDeleteButton) then
         return { success = false, error = 'delete_disabled' }
     end
     if inFlight[source] then
@@ -250,7 +251,7 @@ lib.callback.register('rc_multicharacter:server:deleteCharacter', function(sourc
 end)
 
 lib.callback.register('rc_multicharacter:server:relog', function(source)
-    if not Config.Shared.enableRelogCommand then
+    if not (Config and Config.Shared and Config.Shared.enableRelogCommand) then
         return { success = false, error = 'disabled' }
     end
 
@@ -281,7 +282,7 @@ AddEventHandler('playerDropped', function()
 end)
 
 -- Unified Admin & Player Commands
-if Config.Shared.enableAdminCommands then
+if Config and Config.Shared and Config.Shared.enableAdminCommands then
     lib.addCommand('logout', {
         help = locale('info.logout_command_help'),
         params = {

@@ -25,7 +25,7 @@ end
 
 local function convertPosition(rawPos)
     local pos = DB.SafeDecodeJson(rawPos, nil)
-    local defaultSpawn = Config.Shared.defaultSpawn
+    local defaultSpawn = (Config and Config.Shared and Config.Shared.defaultSpawn) or vec4(-540.58, -212.02, 37.65, 208.88)
     if not pos or not pos.x or not pos.y or not pos.z then
         return vec4(defaultSpawn.x, defaultSpawn.y, defaultSpawn.z, defaultSpawn.w)
     end
@@ -70,14 +70,16 @@ function ESXAdapter.GetAllowedSlots(source)
     local dbSlots = DB.GetSlotOverride(ids.list)
     if dbSlots then return dbSlots end
 
-    local overrides = Config.Server.playersNumberOfCharacters or {}
+    local srv = Config and Config.Server or {}
+    local defaultSlots = srv.defaultNumberOfCharacters or 3
+    local overrides = srv.playersNumberOfCharacters or {}
     for i = 1, #ids.list do
         local k = ids.list[i]
         if k and overrides[k] then
-            return tonumber(overrides[k]) or Config.Server.defaultNumberOfCharacters
+            return tonumber(overrides[k]) or defaultSlots
         end
     end
-    return Config.Server.defaultNumberOfCharacters or 3
+    return defaultSlots
 end
 
 local function parseCharSlot(identifier, rawId)
@@ -300,8 +302,8 @@ function ESXAdapter.LoadCharacter(source, charId)
 end
 
 local function giveStarterItems(source, xPlayer)
-    if not Config.Server.giveStarterItems then return end
-    local items = Config.Shared.starterItems or {}
+    if not (Config and Config.Server and Config.Server.giveStarterItems) then return end
+    local items = (Config and Config.Shared and Config.Shared.starterItems) or {}
     local useOxInv = GetResourceState('ox_inventory') == 'started'
 
     if useOxInv then
@@ -430,11 +432,14 @@ end
 
 function ESXAdapter.ForceDeleteCharacter(charId)
     if type(charId) ~= 'string' or charId == '' then return false end
+    local okRow, row = pcall(MySQL.single.await, 'SELECT identifier FROM users WHERE identifier = ? LIMIT 1', { charId })
+    if not okRow or not row then return false end
+
     local ESX = getCore()
     if ESX and ESX.GetPlayerFromIdentifier then
         local xPlayer = ESX.GetPlayerFromIdentifier(charId)
         if xPlayer and xPlayer.source then
-            DropPlayer(xPlayer.source, 'An admin deleted the character which you are currently using')
+            DropPlayer(tostring(xPlayer.source), 'An admin deleted the character which you are currently using')
         end
     end
     local tables = DB.DiscoverEsxCharacterTables()
