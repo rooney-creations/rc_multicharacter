@@ -23,6 +23,11 @@ Config.Shared = {
     -- Enables /logout (admin) and /deletechar, /setslots, /remslots commands
     enableAdminCommands = true,
 
+    -- Character height bounds (shared between registration dialog and server validation)
+    defaultHeight = 175,
+    minHeight = 120,
+    maxHeight = 220,
+
     -- Whether players can delete their own characters (enforced on both client UI and server)
     enableDeleteButton = true,
 

@@ -368,7 +368,7 @@ function ESXAdapter.CreateCharacter(source, charinfo)
         lastname = charinfo.lastname,
         dateofbirth = charinfo.birthdate,
         sex = charinfo.gender == 0 and 'm' or 'f',
-        height = tonumber(charinfo.height) or Config.Client.defaultHeight or 175,
+        height = tonumber(charinfo.height) or (Config.Shared and Config.Shared.defaultHeight) or 175,
     }
 
     pendingCreations[source] = {

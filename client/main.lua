@@ -539,7 +539,7 @@ chooseCharacter = function()
     for i = 1, amount do
         local character = slotted[i]
         local charinfo = character and character.charinfo
-        local fullName = charinfo and ('%s %s'):format(charinfo.firstname or 'Unknown', charinfo.lastname or '') or nil
+        local fullName = charinfo and ('%s %s'):format(charinfo.firstname or 'Unknown', charinfo.lastname or '') or 'Unknown'
 
         local meta = nil
         if character and charinfo then

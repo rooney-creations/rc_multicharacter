@@ -36,7 +36,12 @@ local function sanitizeNewCharInfo(data)
     local firstname = cleanText(data.firstname, MAX_TEXT)
     local lastname = cleanText(data.lastname, MAX_TEXT)
     local nationality = cleanText(data.nationality, MAX_TEXT)
-    local birthdate = cleanText(data.birthdate, MAX_TEXT)
+    local rawBirthdate = data.birthdate
+    if type(rawBirthdate) == 'number' then
+        local seconds = rawBirthdate > 10000000000 and math.floor(rawBirthdate / 1000) or math.floor(rawBirthdate)
+        rawBirthdate = os.date('%Y-%m-%d', seconds)
+    end
+    local birthdate = cleanText(rawBirthdate, MAX_TEXT)
     local gender = tonumber(data.gender)
 
     if not firstname or not lastname or not nationality or not birthdate or not gender then
@@ -52,11 +57,15 @@ local function sanitizeNewCharInfo(data)
         return nil
     end
 
+    local minHeight = (Config.Shared and Config.Shared.minHeight) or (Config.Client and Config.Client.minHeight) or 120
+    local maxHeight = (Config.Shared and Config.Shared.maxHeight) or (Config.Client and Config.Client.maxHeight) or 220
+    local defaultHeight = (Config.Shared and Config.Shared.defaultHeight) or (Config.Client and Config.Client.defaultHeight) or 175
+
     local height = tonumber(data.height)
     if height then
-        height = math.floor(math.max(Config.Client.minHeight or 120, math.min(Config.Client.maxHeight or 220, height)))
+        height = math.floor(math.max(minHeight, math.min(maxHeight, height)))
     else
-        height = Config.Client.defaultHeight or 175
+        height = defaultHeight
     end
 
     local backstory = cleanText(data.backstory, MAX_BACKSTORY) or 'placeholder backstory'
