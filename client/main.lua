@@ -163,12 +163,49 @@ local function applyNativeFallbackAppearance(pedHandle, preset)
     end
 end
 
+local function placePreviewPedOnGround(unfreezeNow)
+    local ped = PlayerPedId()
+    if not DoesEntityExist(ped) then return end
+
+    local loc = randomLocation and randomLocation.pedCoords or DEFAULT_PREVIEW_LOCATION.pedCoords
+    local x, y, z, heading = loc.x, loc.y, loc.z, loc.w
+
+    RequestCollisionAtCoord(x, y, z)
+    local interior = GetInteriorAtCoords(x, y, z)
+    if interior ~= 0 then
+        PinInteriorInMemory(interior)
+        LoadInterior(interior)
+    end
+
+    SetEntityCoords(ped, x, y, z, false, false, false, false)
+    SetEntityHeading(ped, heading)
+
+    local colDeadline = GetGameTimer() + 4000
+    while (not HasCollisionLoadedAroundEntity(ped) or (interior ~= 0 and not IsInteriorReady(interior))) and GetGameTimer() < colDeadline do
+        RequestCollisionAtCoord(x, y, z)
+        Wait(20)
+    end
+
+    local foundGround, groundZ = GetGroundZFor_3dCoord(x, y, z + 1.5, false)
+    if foundGround and math.abs(groundZ - z) <= 3.0 then
+        SetEntityCoords(ped, x, y, groundZ, false, false, false, false)
+        SetEntityHeading(ped, heading)
+    end
+
+    SetEntityCollision(ped, true, true)
+    if unfreezeNow then
+        FreezeEntityPosition(ped, false)
+        ClearPedTasksImmediately(ped)
+    else
+        FreezeEntityPosition(ped, true)
+    end
+end
+
 local function setupPreviewCam()
-    DoScreenFadeIn(1000)
+    placePreviewPedOnGround(true)
     SetTimecycleModifier('hud_def_blur')
     SetTimecycleModifierStrength(1.0)
-    local ped = PlayerPedId()
-    FreezeEntityPosition(ped, true)
+
     previewCam = CreateCamWithParams(
         'DEFAULT_SCRIPTED_CAMERA',
         randomLocation.camCoords.x,
@@ -187,10 +224,22 @@ local function setupPreviewCam()
     SetCamFarDof(previewCam, 1.8)
     SetCamDofStrength(previewCam, 0.7)
     RenderScriptCams(true, false, 1, true, true)
+    DoScreenFadeIn(1000)
 
     CreateThread(function()
         while previewCam and DoesCamExist(previewCam) do
             SetUseHiDof()
+            -- Keep preview ped standing naturally on the ground without walking off-frame
+            DisableControlAction(0, 21, true)
+            DisableControlAction(0, 22, true)
+            DisableControlAction(0, 24, true)
+            DisableControlAction(0, 25, true)
+            DisableControlAction(0, 30, true)
+            DisableControlAction(0, 31, true)
+            DisableControlAction(0, 32, true)
+            DisableControlAction(0, 33, true)
+            DisableControlAction(0, 34, true)
+            DisableControlAction(0, 35, true)
             Wait(0)
         end
     end)
@@ -257,6 +306,9 @@ local function previewPed(charId)
 
     if not charId then
         randomPed()
+        if previewCam then
+            placePreviewPedOnGround(true)
+        end
         return
     end
 
@@ -270,6 +322,10 @@ local function previewPed(charId)
         adapter.ApplyPreviewSkin(previewData, PlayerPedId(), helpers)
     else
         randomPed()
+    end
+
+    if menuOpen and previewCam then
+        placePreviewPedOnGround(true)
     end
 end
 
@@ -557,16 +613,8 @@ chooseCharacter = function()
         Wait(10)
     end
 
-    local ped = PlayerPedId()
-    RequestCollisionAtCoord(randomLocation.pedCoords.x, randomLocation.pedCoords.y, randomLocation.pedCoords.z)
-    if DoesEntityExist(ped) then
-        FreezeEntityPosition(ped, true)
-    end
-    Wait(500)
-    if DoesEntityExist(ped) then
-        SetEntityCoords(ped, randomLocation.pedCoords.x, randomLocation.pedCoords.y, randomLocation.pedCoords.z, false, false, false, false)
-        SetEntityHeading(ped, randomLocation.pedCoords.w)
-    end
+    Wait(350)
+    placePreviewPedOnGround(false)
 
     NetworkStartSoloTutorialSession()
     local tutTimeout = GetGameTimer() + 5000
