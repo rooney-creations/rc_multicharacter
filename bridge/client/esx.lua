@@ -102,13 +102,8 @@ local function openEsxSkinCreator(xPlayer)
         TriggerEvent('esx_skin:openSaveableMenu')
     elseif GetResourceState('illenium-appearance') == 'started' then
         applyGenderDefaultModel(sexInt)
-        pcall(function()
-            exports['illenium-appearance']:startPlayerCustomization(function(appearance)
-                if appearance then
-                    TriggerServerEvent('illenium-appearance:server:saveAppearance', appearance)
-                end
-            end)
-        end)
+        -- Use illenium-appearance's ESX compatibility menu handler (initial clothes, NewCharacterSections, enableExit=false, bucket sync)
+        TriggerEvent('esx_skin:openSaveableMenu')
     elseif GetResourceState('fivem-appearance') == 'started' then
         applyGenderDefaultModel(sexInt)
         pcall(function()
@@ -131,6 +126,9 @@ local function applyEsxExistingSkin(skin, xPlayer)
             SetModelAsNoLongerNeeded(model)
         end
         local ped = PlayerPedId()
+        if DoesEntityExist(ped) then
+            SetPedDefaultComponentVariation(ped)
+        end
         if GetResourceState('illenium-appearance') == 'started' then
             pcall(function() exports['illenium-appearance']:setPedAppearance(ped, skin) end)
         elseif GetResourceState('fivem-appearance') == 'started' then
@@ -212,7 +210,7 @@ end
 function ESXClient.RegisterLogoutListener(openMenuFn)
     RegisterNetEvent('esx:onPlayerLogout', function()
         if Bridge.Framework.GetType() ~= 'esx' then return end
-        if GetResourceState('esx_skin') == 'started' then
+        if GetResourceState('esx_skin') == 'started' or GetResourceState('illenium-appearance') == 'started' then
             TriggerEvent('esx_skin:resetFirstSpawn')
         end
         Wait(350)
